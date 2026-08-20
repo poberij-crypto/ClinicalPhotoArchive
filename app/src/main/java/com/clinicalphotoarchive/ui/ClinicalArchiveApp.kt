@@ -3,7 +3,9 @@ package com.clinicalphotoarchive.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,12 +20,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -47,10 +53,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -186,6 +196,8 @@ private fun PatientCard(
     val context = LocalContext.current
     var pendingCameraPath by remember { mutableStateOf<String?>(null) }
     var editPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
+    var fullScreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
+    var editPatient by remember(patient.id) { mutableStateOf(false) }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isNotEmpty()) vm.importPhotos(uris)
@@ -205,11 +217,17 @@ private fun PatientCard(
                 title = { Text(patient.displayName) },
                 navigationIcon = if (showBack) {
                     { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Назад") } }
-                } else ({})
+                } else ({ }),
+                actions = {
+                    IconButton(onClick = { editPatient = true }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Редактировать пациента")
+                    }
+                }
             )
         }
     ) { padding ->
         Column(Modifier.padding(padding).padding(12.dp).fillMaxSize()) {
+            if (patient.chartNumber.isNotBlank()) Text("№ карты: ${patient.chartNumber}")
             if (patient.diagnosis.isNotBlank()) Text("Диагноз: ${patient.diagnosis}")
             if (patient.note.isNotBlank()) Text(patient.note, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
@@ -242,11 +260,27 @@ private fun PatientCard(
 
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(photos, key = { it.id }) { photo ->
-                    PhotoItem(photo = photo, onEdit = { editPhoto = photo }, onDelete = { vm.deletePhoto(photo) })
+                    PhotoItem(
+                        photo = photo,
+                        onEdit = { editPhoto = photo },
+                        onFullscreen = { fullScreenPhoto = photo },
+                        onDelete = { vm.deletePhoto(photo) }
+                    )
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }
         }
+    }
+
+    if (editPatient) {
+        EditPatientDialog(
+            patient = patient,
+            onDismiss = { editPatient = false },
+            onSave = { updated ->
+                vm.updatePatient(updated)
+                editPatient = false
+            }
+        )
     }
 
     editPhoto?.let { photo ->
@@ -259,10 +293,19 @@ private fun PatientCard(
             }
         )
     }
+
+    fullScreenPhoto?.let { photo ->
+        FullScreenPhotoDialog(photo = photo, onDismiss = { fullScreenPhoto = null })
+    }
 }
 
 @Composable
-private fun PhotoItem(photo: PhotoEntity, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun PhotoItem(
+    photo: PhotoEntity,
+    onEdit: () -> Unit,
+    onFullscreen: () -> Unit,
+    onDelete: () -> Unit
+) {
     val bitmap = remember(photo.localPath) { ImageFiles.loadBitmap(photo.localPath, 1400)?.asImageBitmap() }
     Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
         Column {
@@ -270,7 +313,12 @@ private fun PhotoItem(photo: PhotoEntity, onEdit: () -> Unit, onDelete: () -> Un
                 Image(
                     bitmap = bitmap,
                     contentDescription = photo.description,
-                    modifier = Modifier.fillMaxWidth().height(260.dp).clickable(onClick = onEdit),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp)
+                        .pointerInput(photo.id) {
+                            detectTapGestures(onDoubleTap = { onFullscreen() })
+                        },
                     contentScale = ContentScale.Crop
                 )
             }
@@ -280,6 +328,47 @@ private fun PhotoItem(photo: PhotoEntity, onEdit: () -> Unit, onDelete: () -> Un
                     modifier = Modifier.weight(1f).clickable(onClick = onEdit)
                 )
                 IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Удалить") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FullScreenPhotoDialog(photo: PhotoEntity, onDismiss: () -> Unit) {
+    val bitmap = remember(photo.localPath) { ImageFiles.loadBitmap(photo.localPath, 4096)?.asImageBitmap() }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = photo.description,
+                    modifier = Modifier.fillMaxSize().padding(8.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = Color.White)
+            }
+            if (photo.description.isNotBlank()) {
+                Text(
+                    text = photo.description,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.65f))
+                        .padding(14.dp)
+                )
             }
         }
     }
@@ -301,7 +390,10 @@ private fun AddPatientDialog(
         onDismissRequest = onDismiss,
         title = { Text("Новый пациент") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 OutlinedTextField(surname, { surname = it }, label = { Text("Фамилия *") })
                 OutlinedTextField(firstName, { firstName = it }, label = { Text("Имя") })
                 OutlinedTextField(middleName, { middleName = it }, label = { Text("Отчество") })
@@ -314,6 +406,56 @@ private fun AddPatientDialog(
             TextButton(enabled = surname.isNotBlank(), onClick = { onSave(surname, firstName, middleName, chart, diagnosis, note) }) {
                 Text("Сохранить")
             }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
+}
+
+@Composable
+private fun EditPatientDialog(
+    patient: PatientEntity,
+    onDismiss: () -> Unit,
+    onSave: (PatientEntity) -> Unit
+) {
+    var surname by remember(patient.id) { mutableStateOf(patient.surname) }
+    var firstName by remember(patient.id) { mutableStateOf(patient.firstName) }
+    var middleName by remember(patient.id) { mutableStateOf(patient.middleName) }
+    var chart by remember(patient.id) { mutableStateOf(patient.chartNumber) }
+    var diagnosis by remember(patient.id) { mutableStateOf(patient.diagnosis) }
+    var note by remember(patient.id) { mutableStateOf(patient.note) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Редактировать пациента") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedTextField(surname, { surname = it }, label = { Text("Фамилия *") })
+                OutlinedTextField(firstName, { firstName = it }, label = { Text("Имя") })
+                OutlinedTextField(middleName, { middleName = it }, label = { Text("Отчество") })
+                OutlinedTextField(chart, { chart = it }, label = { Text("№ карты") })
+                OutlinedTextField(diagnosis, { diagnosis = it }, label = { Text("Диагноз / клинический случай") })
+                OutlinedTextField(note, { note = it }, label = { Text("Заметка") })
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = surname.isNotBlank(),
+                onClick = {
+                    onSave(
+                        patient.copy(
+                            surname = surname.trim(),
+                            firstName = firstName.trim(),
+                            middleName = middleName.trim(),
+                            chartNumber = chart.trim(),
+                            diagnosis = diagnosis.trim(),
+                            note = note.trim()
+                        )
+                    )
+                }
+            ) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
