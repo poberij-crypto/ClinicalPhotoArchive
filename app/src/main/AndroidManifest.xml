@@ -5,6 +5,8 @@
         android:name=".ClinicalArchiveApplication"
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"
+        android:icon="@drawable/ic_scalpel"
+        android:roundIcon="@drawable/ic_scalpel"
         android:label="Хирургический фотоархив"
         android:supportsRtl="true"
         android:theme="@style/Theme.ClinicalPhotoArchive">
