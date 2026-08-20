@@ -1,3 +1,4 @@
+# CI trigger for Clinical Photo Archive v1.1.0
 name: Build Android APK
 
 on:
