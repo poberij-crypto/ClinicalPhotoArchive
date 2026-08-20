@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  statuses: write
 
 jobs:
   build:
@@ -22,6 +23,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Publish CI run link
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state=pending \
+            -f context='ci/android-build' \
+            -f description='Android APK build running' \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -82,6 +93,25 @@ jobs:
           name: ClinicalPhotoArchive-v1.1.0-debug-apk
           path: ci-output/ClinicalPhotoArchive-v1.1.0-debug.apk
           if-no-files-found: error
+
+      - name: Publish final CI status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if [ "${{ steps.build.outputs.status }}" = "0" ]; then
+            STATE=success
+            DESC='Android APK build succeeded'
+          else
+            STATE=failure
+            DESC='Android APK build failed'
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state="$STATE" \
+            -f context='ci/android-build' \
+            -f description="$DESC" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
       - name: Fail if compilation failed
         if: steps.build.outputs.status != '0'
