@@ -61,8 +61,8 @@ jobs:
             cp app/build/outputs/apk/debug/app-debug.apk ci-output/ClinicalPhotoArchive-v1.1.0-debug.apk
           fi
 
-      - name: Commit CI output to feature branch
-        if: always() && github.ref == 'refs/heads/feature/patient-edit-fullscreen-scalpel-icon'
+      - name: Commit CI output
+        if: always()
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -72,7 +72,7 @@ jobs:
             git add -- ci-output/ClinicalPhotoArchive-v1.1.0-debug.apk
           fi
           git commit -m "Publish v1.1.0 CI build output" || true
-          git push origin HEAD:feature/patient-edit-fullscreen-scalpel-icon
+          git push origin HEAD:${GITHUB_REF_NAME}
 
       - name: Upload APK artifact
         if: steps.build.outputs.status == '0'
