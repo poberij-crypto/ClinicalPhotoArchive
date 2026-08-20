@@ -8,7 +8,7 @@ on:
       - feature/patient-edit-fullscreen-scalpel-icon
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -38,11 +38,53 @@ jobs:
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        id: build
+        shell: bash
+        run: |
+          set +e
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
 
-      - name: Upload APK
+      - name: Prepare APK name
+        if: steps.build.outputs.status == '0'
+        run: cp app/build/outputs/apk/debug/app-debug.apk ClinicalPhotoArchive-v1.1.0-debug.apk
+
+      - name: Upload APK artifact
+        if: steps.build.outputs.status == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: ClinicalPhotoArchive-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: ClinicalPhotoArchive-v1.1.0-debug-apk
+          path: ClinicalPhotoArchive-v1.1.0-debug.apk
           if-no-files-found: error
+
+      - name: Publish build result release
+        if: always() && github.ref == 'refs/heads/feature/patient-edit-fullscreen-scalpel-icon'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="clinical-photo-archive-v1.1.0"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" build.log --clobber
+            if [ -f ClinicalPhotoArchive-v1.1.0-debug.apk ]; then
+              gh release upload "$TAG" ClinicalPhotoArchive-v1.1.0-debug.apk --clobber
+            fi
+          else
+            if [ -f ClinicalPhotoArchive-v1.1.0-debug.apk ]; then
+              gh release create "$TAG" build.log ClinicalPhotoArchive-v1.1.0-debug.apk \
+                --target "$GITHUB_SHA" \
+                --title "Clinical Photo Archive v1.1.0 test build" \
+                --notes "Automated test build with patient editing, fullscreen photo viewing, and scalpel icon."
+            else
+              gh release create "$TAG" build.log \
+                --target "$GITHUB_SHA" \
+                --title "Clinical Photo Archive v1.1.0 build diagnostics" \
+                --notes "Build failed; see build.log."
+            fi
+          fi
+
+      - name: Fail if compilation failed
+        if: steps.build.outputs.status != '0'
+        run: exit 1
