@@ -16,6 +16,9 @@ interface PatientDao {
     @Query("SELECT * FROM patients WHERE id = :id LIMIT 1")
     fun observeById(id: Long): Flow<PatientEntity?>
 
+    @Query("SELECT * FROM patients ORDER BY id")
+    suspend fun getAll(): List<PatientEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(patient: PatientEntity): Long
 
@@ -24,6 +27,9 @@ interface PatientDao {
 
     @Delete
     suspend fun delete(patient: PatientEntity)
+
+    @Query("DELETE FROM patients")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -34,6 +40,9 @@ interface PhotoDao {
     @Query("SELECT * FROM photos WHERE patientId = :patientId ORDER BY addedAt ASC")
     suspend fun getForPatient(patientId: Long): List<PhotoEntity>
 
+    @Query("SELECT * FROM photos ORDER BY id")
+    suspend fun getAll(): List<PhotoEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(photo: PhotoEntity): Long
 
@@ -42,4 +51,7 @@ interface PhotoDao {
 
     @Delete
     suspend fun delete(photo: PhotoEntity)
+
+    @Query("DELETE FROM photos")
+    suspend fun deleteAll()
 }
