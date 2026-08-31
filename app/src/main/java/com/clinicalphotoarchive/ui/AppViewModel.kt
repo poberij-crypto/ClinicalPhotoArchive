@@ -8,6 +8,7 @@ import com.clinicalphotoarchive.ClinicalArchiveApplication
 import com.clinicalphotoarchive.data.PatientEntity
 import com.clinicalphotoarchive.data.PhotoEntity
 import com.clinicalphotoarchive.data.PhotoSection
+import com.clinicalphotoarchive.util.BackupArchive
 import com.clinicalphotoarchive.util.ImageFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,16 +20,22 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as ClinicalArchiveApplication
     private val patientDao = app.database.patientDao()
     private val photoDao = app.database.photoDao()
+    private val backupArchive = BackupArchive(application, app.database)
 
     val searchQuery = MutableStateFlow("")
     private val selectedPatientId = MutableStateFlow<Long?>(null)
     val section = MutableStateFlow(PhotoSection.BEFORE)
+
+    val archiveBusy = MutableStateFlow(false)
+    val archiveMessage = MutableStateFlow<String?>(null)
 
     val patients: StateFlow<List<PatientEntity>> = searchQuery
         .flatMapLatest { patientDao.observeAll(it.trim().lowercase(Locale.ROOT)) }
@@ -111,5 +118,49 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             photoDao.delete(photo)
             withContext(Dispatchers.IO) { ImageFiles.delete(photo.localPath) }
         }
+    }
+
+    fun backupFileName(): String {
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.ROOT).format(Date())
+        return "ClinicalPhotoArchive_backup_$stamp.zip"
+    }
+
+    fun exportBackup(uri: Uri) {
+        if (archiveBusy.value) return
+        archiveBusy.value = true
+        archiveMessage.value = null
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { backupArchive.exportTo(uri) }
+            }.onSuccess { result ->
+                archiveMessage.value = "Резервная копия создана: ${result.patientCount} пациентов, ${result.photoCount} фотографий."
+            }.onFailure { error ->
+                archiveMessage.value = "Не удалось создать резервную копию: ${error.message ?: "неизвестная ошибка"}"
+            }
+            archiveBusy.value = false
+        }
+    }
+
+    fun restoreBackup(uri: Uri) {
+        if (archiveBusy.value) return
+        archiveBusy.value = true
+        archiveMessage.value = null
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { backupArchive.restoreFrom(uri) }
+            }.onSuccess { result ->
+                selectedPatientId.value = null
+                section.value = PhotoSection.BEFORE
+                searchQuery.value = ""
+                archiveMessage.value = "Архив восстановлен: ${result.patientCount} пациентов, ${result.photoCount} фотографий."
+            }.onFailure { error ->
+                archiveMessage.value = "Восстановление не выполнено: ${error.message ?: "неизвестная ошибка"}"
+            }
+            archiveBusy.value = false
+        }
+    }
+
+    fun clearArchiveMessage() {
+        archiveMessage.value = null
     }
 }
