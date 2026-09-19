@@ -31,7 +31,8 @@ class MainActivity : ComponentActivity() {
                         vm = vm,
                         modifier = Modifier
                             .align(Alignment.BottomStart)
-                            .padding(start = 16.dp, bottom = 20.dp)
+                            .navigationBarsPadding()
+                            .padding(start = 16.dp, bottom = 16.dp)
                     )
                 }
             }
