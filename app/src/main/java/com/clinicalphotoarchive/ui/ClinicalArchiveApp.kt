@@ -197,7 +197,7 @@ private fun PatientCard(
     var pendingCameraPath by remember { mutableStateOf<String?>(null) }
     var editPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
     var fullScreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
-    var editPatient by remember(patient.id) { mutableStateOf(false) }
+    var editPatient by remember(patient.id) { mutableStateOf(false) }\n    var deletePatient by remember(patient.id) { mutableStateOf(false) }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isNotEmpty()) vm.importPhotos(uris)
@@ -221,6 +221,9 @@ private fun PatientCard(
                 actions = {
                     IconButton(onClick = { editPatient = true }) {
                         Icon(Icons.Default.Edit, contentDescription = "Редактировать пациента")
+                    }
+                    IconButton(onClick = { deletePatient = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Удалить карточку пациента")
                     }
                 }
             )
@@ -279,6 +282,30 @@ private fun PatientCard(
             onSave = { updated ->
                 vm.updatePatient(updated)
                 editPatient = false
+            }
+        )
+    }
+
+    if (deletePatient) {
+        AlertDialog(
+            onDismissRequest = { deletePatient = false },
+            title = { Text("Удалить карточку пациента?") },
+            text = {
+                Text(
+                    "Карточка «${patient.displayName}» и все связанные с ней фотографии будут удалены с устройства без возможности отмены. " +
+                        "Если данные могут понадобиться позже, сначала создайте резервную копию через «Архив»."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deletePatient = false
+                        vm.deletePatient(patient)
+                    }
+                ) { Text("Удалить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletePatient = false }) { Text("Отмена") }
             }
         )
     }
