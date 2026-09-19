@@ -197,7 +197,8 @@ private fun PatientCard(
     var pendingCameraPath by remember { mutableStateOf<String?>(null) }
     var editPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
     var fullScreenPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
-    var editPatient by remember(patient.id) { mutableStateOf(false) }\n    var deletePatient by remember(patient.id) { mutableStateOf(false) }
+    var editPatient by remember(patient.id) { mutableStateOf(false) }
+    var deletePatient by remember(patient.id) { mutableStateOf(false) }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isNotEmpty()) vm.importPhotos(uris)
