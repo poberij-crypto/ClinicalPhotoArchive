@@ -119,13 +119,13 @@ class MigratorViewModel(application: Application) : AndroidViewModel(application
 
     fun requestShizukuPermission() {
         if (!runCatching { Shizuku.pingBinder() }.getOrDefault(false)) {
-            setMessage("Shizuku РЅРµ Р·Р°РїСѓС‰РµРЅ. РЎРЅР°С‡Р°Р»Р° Р·Р°РїСѓСЃС‚РёС‚Рµ Shizuku.")
+            setMessage("Shizuku не запущен. Сначала запустите Shizuku.")
             return
         }
         runCatching {
             Shizuku.requestPermission(REQUEST_SHIZUKU)
         }.onFailure {
-            setMessage("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСЂРѕСЃРёС‚СЊ СЂР°Р·СЂРµС€РµРЅРёРµ Shizuku: ${it.message}")
+            setMessage("Не удалось запросить разрешение Shizuku: ${it.message}")
         }
     }
 
@@ -142,14 +142,14 @@ class MigratorViewModel(application: Application) : AndroidViewModel(application
                 runCatching { remote.probe() }
             }
             result.onSuccess { parseProbe(it) }
-                .onFailure { setMessage("РћС€РёР±РєР° РїСЂРѕРІРµСЂРєРё: ${it.message ?: "РЅРµРёР·РІРµСЃС‚РЅР°СЏ РѕС€РёР±РєР°"}") }
+                .onFailure { setMessage("Ошибка проверки: ${it.message ?: "неизвестная ошибка"}") }
             _state.value = _state.value.copy(busy = false)
         }
     }
 
     fun exportArchive(uri: Uri) {
         val remote = service ?: run {
-            setMessage("РЎРµСЂРІРёСЃ РјРёРіСЂР°С†РёРё РЅРµ РїРѕРґРєР»СЋС‡С‘РЅ.")
+            setMessage("Сервис миграции не подключён.")
             return
         }
         if (!_state.value.archiveReady || _state.value.busy) return
@@ -160,22 +160,22 @@ class MigratorViewModel(application: Application) : AndroidViewModel(application
                 runCatching {
                     app.contentResolver.openFileDescriptor(uri, "w")?.use { pfd ->
                         remote.writeArchive(pfd)
-                    } ?: "ERROR|РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РІС‹Р±СЂР°РЅРЅС‹Р№ С„Р°Р№Р»"
+                    } ?: "ERROR|Не удалось открыть выбранный файл"
                 }
             }
             result.onSuccess { raw ->
                 if (raw.startsWith("OK|")) {
                     val bytes = raw.substringAfter('|').toLongOrNull()
-                    val sizeText = bytes?.let { formatBytes(it) } ?: "РЅРµРёР·РІРµСЃС‚РЅС‹Р№ СЂР°Р·РјРµСЂ"
+                    val sizeText = bytes?.let { formatBytes(it) } ?: "неизвестный размер"
                     setMessage(
-                        "РђСЂС…РёРІ СЃРѕР·РґР°РЅ СѓСЃРїРµС€РЅРѕ ($sizeText). РЎС‚Р°СЂРѕРµ РїСЂРёР»РѕР¶РµРЅРёРµ Рё РµРіРѕ РґР°РЅРЅС‹Рµ РЅРµ СѓРґР°Р»РµРЅС‹. " +
-                            "Р¤Р°Р№Р» СЃРѕС…СЂР°РЅС‘РЅ РІ РІС‹Р±СЂР°РЅРЅСѓСЋ РІР°РјРё РїР°РїРєСѓ."
+                        "Архив создан успешно ($sizeText). Старое приложение и его данные не удалены. " +
+                            "Файл сохранён в выбранную вами папку."
                     )
                 } else {
-                    setMessage("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ Р°СЂС…РёРІ: ${raw.substringAfter('|', raw)}")
+                    setMessage("Не удалось создать архив: ${raw.substringAfter('|', raw)}")
                 }
             }.onFailure {
-                setMessage("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ Р°СЂС…РёРІ: ${it.message ?: "РЅРµРёР·РІРµСЃС‚РЅР°СЏ РѕС€РёР±РєР°"}")
+                setMessage("Не удалось создать архив: ${it.message ?: "неизвестная ошибка"}")
             }
             _state.value = _state.value.copy(busy = false)
         }
@@ -200,7 +200,7 @@ class MigratorViewModel(application: Application) : AndroidViewModel(application
             Shizuku.bindUserService(serviceArgs, connection)
         }.onFailure {
             binding = false
-            setMessage("РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРєР»СЋС‡РёС‚СЊ СЃРµСЂРІРёСЃ РјРёРіСЂР°С†РёРё: ${it.message}")
+            setMessage("Не удалось подключить сервис миграции: ${it.message}")
         }
     }
 
@@ -212,13 +212,13 @@ class MigratorViewModel(application: Application) : AndroidViewModel(application
                 databaseBytes = null,
                 message = when {
                     raw.contains("not debuggable", ignoreCase = true) ->
-                        "РЈСЃС‚Р°РЅРѕРІР»РµРЅРЅР°СЏ РІРµСЂСЃРёСЏ РЅРµ РґРѕРїСѓСЃРєР°РµС‚ run-as. Р­С‚Р° СѓС‚РёР»РёС‚Р° СЂР°СЃСЃС‡РёС‚Р°РЅР° РЅР° СЃС‚Р°СЂС‹Рµ debug-СЃР±РѕСЂРєРё."
+                        "Установленная версия не допускает run-as. Эта утилита рассчитана на старые debug-сборки."
                     raw.contains("unknown package", ignoreCase = true) ||
                         raw.contains("package not found", ignoreCase = true) ->
-                        "РЎС‚Р°СЂР°СЏ РІРµСЂСЃРёСЏ ClinicalPhotoArchive РЅРµ РЅР°Р№РґРµРЅР°."
+                        "Старая версия ClinicalPhotoArchive не найдена."
                     raw.contains("NO_DB", ignoreCase = true) ->
-                        "РџСЂРёР»РѕР¶РµРЅРёРµ РЅР°Р№РґРµРЅРѕ, РЅРѕ Р±Р°Р·Р° clinical_photo_archive.db РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚."
-                    else -> "Р”РѕСЃС‚СѓРї Рє СЃС‚Р°СЂРѕР№ Р±Р°Р·Рµ РЅРµ РїРѕР»СѓС‡РµРЅ: ${raw.substringAfter('|', raw)}"
+                        "Приложение найдено, но база clinical_photo_archive.db отсутствует."
+                    else -> "Доступ к старой базе не получен: ${raw.substringAfter('|', raw)}"
                 }
             )
             return
@@ -254,8 +254,8 @@ class MigratorViewModel(application: Application) : AndroidViewModel(application
 
     private fun formatBytes(value: Long): String {
         val mb = value / (1024.0 * 1024.0)
-        return if (mb >= 1.0) String.format(Locale.ROOT, "%.1f РњР‘", mb)
-        else String.format(Locale.ROOT, "%.1f РљР‘", value / 1024.0)
+        return if (mb >= 1.0) String.format(Locale.ROOT, "%.1f МБ", mb)
+        else String.format(Locale.ROOT, "%.1f КБ", value / 1024.0)
     }
 
     override fun onCleared() {
