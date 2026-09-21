@@ -1,0 +1,72 @@
+name: Build Windows Migrator
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feature/windows-migrator
+    paths:
+      - 'windows-migrator/**'
+      - '.github/workflows/build-windows-migrator.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download official Android platform-tools
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://dl.google.com/android/repository/platform-tools-latest-windows.zip" -OutFile "$env:RUNNER_TEMP\platform-tools.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\platform-tools.zip" -DestinationPath "$env:RUNNER_TEMP\android-tools" -Force
+          & "$env:RUNNER_TEMP\android-tools\platform-tools\adb.exe" version
+
+      - name: Validate Python source
+        shell: pwsh
+        run: python -m py_compile windows-migrator\clinical_photo_archive_migrator.py
+
+      - name: Install PyInstaller
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller==6.16.0
+
+      - name: Build portable application
+        shell: pwsh
+        run: |
+          $pt = "$env:RUNNER_TEMP\android-tools\platform-tools"
+          python -m PyInstaller --noconfirm --clean --windowed --onedir --name "ClinicalPhotoArchive-Migrator" --add-binary "$pt\adb.exe;platform-tools" --add-binary "$pt\AdbWinApi.dll;platform-tools" --add-binary "$pt\AdbWinUsbApi.dll;platform-tools" windows-migrator\clinical_photo_archive_migrator.py
+
+      - name: Self-test packaged ADB
+        shell: pwsh
+        run: |
+          & ".\dist\ClinicalPhotoArchive-Migrator\ClinicalPhotoArchive-Migrator.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Migrator self-test failed with exit code $LASTEXITCODE" }
+
+      - name: Prepare distributable ZIP
+        shell: pwsh
+        run: |
+          Copy-Item "windows-migrator\README.md" "dist\ClinicalPhotoArchive-Migrator\README.txt"
+          New-Item -ItemType Directory -Force "release-output" | Out-Null
+          Compress-Archive -Path "dist\ClinicalPhotoArchive-Migrator\*" -DestinationPath "release-output\ClinicalPhotoArchive-Windows-Migrator-v1.0.0.zip" -CompressionLevel Optimal
+          $hash = (Get-FileHash "release-output\ClinicalPhotoArchive-Windows-Migrator-v1.0.0.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "SHA256  ClinicalPhotoArchive-Windows-Migrator-v1.0.0.zip  $hash" | Set-Content "release-output\SHA256.txt"
+
+      - name: Upload Windows Migrator
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClinicalPhotoArchive-Windows-Migrator-v1.0.0
+          path: release-output/
+          if-no-files-found: error
