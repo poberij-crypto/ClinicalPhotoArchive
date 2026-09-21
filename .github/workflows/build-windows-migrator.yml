@@ -52,8 +52,8 @@ jobs:
       - name: Self-test packaged ADB
         shell: pwsh
         run: |
-          & ".\dist\ClinicalPhotoArchive-Migrator\ClinicalPhotoArchive-Migrator.exe" --self-test
-          if ($LASTEXITCODE -ne 0) { throw "Migrator self-test failed with exit code $LASTEXITCODE" }
+          $process = Start-Process -FilePath ".\dist\ClinicalPhotoArchive-Migrator\ClinicalPhotoArchive-Migrator.exe" -ArgumentList "--self-test" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Migrator self-test failed with exit code $($process.ExitCode)" }
 
       - name: Prepare distributable ZIP
         shell: pwsh
