@@ -85,5 +85,6 @@ dependencies {
     implementation("androidx.room:room-ktx:2.8.4")
     ksp("androidx.room:room-compiler:2.8.4")
 
-    implementation("androidx.exifinterface:exifinterface:1.4.1")\n    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("androidx.exifinterface:exifinterface:1.4.1")
+    implementation("org.apache.commons:commons-compress:1.27.1")
 }
