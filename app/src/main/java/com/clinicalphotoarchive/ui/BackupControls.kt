@@ -29,7 +29,8 @@ fun BackupControls(vm: AppViewModel, modifier: Modifier = Modifier) {
     val busy by vm.archiveBusy.collectAsStateWithLifecycle()
     val message by vm.archiveMessage.collectAsStateWithLifecycle()
     var menuExpanded by remember { mutableStateOf(false) }
-    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }\n    var pendingLegacyUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingLegacyUri by remember { mutableStateOf<Uri?>(null) }
 
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
