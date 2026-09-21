@@ -1,0 +1,81 @@
+name: Build Android Migrator APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feature/android-migrator
+    paths:
+      - 'migrator/**'
+      - 'settings.gradle.kts'
+      - '.github/workflows/build-migrator.yml'
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 9.5
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android SDK 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Restore release keystore
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/clinicalarchive-release.jks"
+          test -s "$RUNNER_TEMP/clinicalarchive-release.jks"
+
+      - name: Build signed Migrator APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/clinicalarchive-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle :migrator:assembleRelease --stacktrace
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs             migrator/build/outputs/apk/release/migrator-release.apk | tee migrator-signing-info.txt
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          mkdir -p migrator-output
+          cp migrator/build/outputs/apk/release/migrator-release.apk             migrator-output/ClinicalPhotoArchive-Migrator-v1.0.0-release.apk
+          cp migrator-signing-info.txt migrator-output/signing-info.txt
+
+      - name: Upload Migrator APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClinicalPhotoArchive-Migrator-v1.0.0-release
+          path: migrator-output/
+          if-no-files-found: error

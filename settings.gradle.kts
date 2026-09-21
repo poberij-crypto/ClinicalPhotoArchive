@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "ClinicalPhotoArchive"
-include(":app")
+include(":app", ":migrator")
