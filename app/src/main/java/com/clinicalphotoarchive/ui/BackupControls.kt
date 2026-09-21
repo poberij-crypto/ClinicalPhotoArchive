@@ -29,7 +29,7 @@ fun BackupControls(vm: AppViewModel, modifier: Modifier = Modifier) {
     val busy by vm.archiveBusy.collectAsStateWithLifecycle()
     val message by vm.archiveMessage.collectAsStateWithLifecycle()
     var menuExpanded by remember { mutableStateOf(false) }
-    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }\n    var pendingLegacyUri by remember { mutableStateOf<Uri?>(null) }
 
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
@@ -43,6 +43,12 @@ fun BackupControls(vm: AppViewModel, modifier: Modifier = Modifier) {
         if (uri != null) pendingRestoreUri = uri
     }
 
+    val legacyImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) pendingLegacyUri = uri
+    }
+
     Box(modifier) {
         ExtendedFloatingActionButton(
             onClick = { if (!busy) menuExpanded = true },
@@ -53,7 +59,7 @@ fun BackupControls(vm: AppViewModel, modifier: Modifier = Modifier) {
                     Icon(Icons.Default.Archive, contentDescription = null)
                 }
             },
-            text = { Text(if (busy) "Архивация…" else "Архив") }
+            text = { Text(if (busy) "Обработка…" else "Архив") }
         )
 
         DropdownMenu(
@@ -74,6 +80,21 @@ fun BackupControls(vm: AppViewModel, modifier: Modifier = Modifier) {
                 onClick = {
                     menuExpanded = false
                     restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Импорт из старой версии") },
+                leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
+                onClick = {
+                    menuExpanded = false
+                    legacyImportLauncher.launch(
+                        arrayOf(
+                            "application/x-tar",
+                            "application/x-gtar",
+                            "application/octet-stream",
+                            "*/*"
+                        )
+                    )
                 }
             )
         }
@@ -98,6 +119,30 @@ fun BackupControls(vm: AppViewModel, modifier: Modifier = Modifier) {
             },
             dismissButton = {
                 TextButton(onClick = { pendingRestoreUri = null }) { Text("Отмена") }
+            }
+        )
+    }
+
+    pendingLegacyUri?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingLegacyUri = null },
+            title = { Text("Импортировать старую базу?") },
+            text = {
+                Text(
+                    "Текущие данные не будут удалены. Карточки из старой debug-версии будут " +
+                        "добавлены к существующим. При совпадении номера карты пациент будет " +
+                        "объединён с существующей карточкой; повторные фотографии будут пропущены. " +
+                        "Рекомендуется заранее создать резервную копию текущего архива."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingLegacyUri = null
+                    vm.importLegacyArchive(uri)
+                }) { Text("Импортировать") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingLegacyUri = null }) { Text("Отмена") }
             }
         )
     }

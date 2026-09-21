@@ -9,7 +9,7 @@ import com.clinicalphotoarchive.data.PatientEntity
 import com.clinicalphotoarchive.data.PhotoEntity
 import com.clinicalphotoarchive.data.PhotoSection
 import com.clinicalphotoarchive.util.BackupArchive
-import com.clinicalphotoarchive.util.ImageFiles
+import com.clinicalphotoarchive.util.ImageFiles\nimport com.clinicalphotoarchive.util.LegacyArchiveImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,7 +28,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as ClinicalArchiveApplication
     private val patientDao = app.database.patientDao()
     private val photoDao = app.database.photoDao()
-    private val backupArchive = BackupArchive(application, app.database)
+    private val backupArchive = BackupArchive(application, app.database)\n    private val legacyArchiveImporter = LegacyArchiveImporter(application, app.database)
 
     val searchQuery = MutableStateFlow("")
     private val selectedPatientId = MutableStateFlow<Long?>(null)
@@ -155,6 +155,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 archiveMessage.value = "Архив восстановлен: ${result.patientCount} пациентов, ${result.photoCount} фотографий."
             }.onFailure { error ->
                 archiveMessage.value = "Восстановление не выполнено: ${error.message ?: "неизвестная ошибка"}"
+            }
+            archiveBusy.value = false
+        }
+    }
+
+    fun importLegacyArchive(uri: Uri) {
+        if (archiveBusy.value) return
+        archiveBusy.value = true
+        archiveMessage.value = null
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { legacyArchiveImporter.importFrom(uri) }
+            }.onSuccess { result ->
+                selectedPatientId.value = null
+                section.value = PhotoSection.BEFORE
+                searchQuery.value = ""
+                archiveMessage.value =
+                    "Импорт завершён: добавлено пациентов — ${result.patientsAdded}, " +
+                        "объединено с существующими — ${result.patientsMerged}, " +
+                        "добавлено фотографий — ${result.photosAdded}, " +
+                        "пропущено повторных фотографий — ${result.photosSkipped}."
+            }.onFailure { error ->
+                archiveMessage.value =
+                    "Импорт из старой версии не выполнен: ${error.message ?: "неизвестная ошибка"}"
             }
             archiveBusy.value = false
         }
