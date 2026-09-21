@@ -1,6 +1,10 @@
 name: Build Android Migrator APK
 
 on:
+  pull_request:
+    paths:
+      - 'migrator/**'
+      - '.github/workflows/build-migrator.yml'
   workflow_dispatch:
   push:
     branches:
@@ -44,6 +48,9 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
+      - name: Regression tests
+        run: gradle :migrator:testDebugUnitTest --stacktrace
+
       - name: Restore release keystore
         shell: bash
         env:
@@ -70,12 +77,13 @@ jobs:
         shell: bash
         run: |
           mkdir -p migrator-output
-          cp migrator/build/outputs/apk/release/migrator-release.apk             migrator-output/ClinicalPhotoArchive-Migrator-v1.0.0-release.apk
+          cp migrator/build/outputs/apk/release/migrator-release.apk             migrator-output/ClinicalPhotoArchive-Migrator-v1.0.1-release.apk
           cp migrator-signing-info.txt migrator-output/signing-info.txt
+          sha256sum migrator-output/*.apk > migrator-output/SHA256.txt
 
       - name: Upload Migrator APK
         uses: actions/upload-artifact@v4
         with:
-          name: ClinicalPhotoArchive-Migrator-v1.0.0-release
+          name: ClinicalPhotoArchive-Migrator-v1.0.1-release
           path: migrator-output/
           if-no-files-found: error
