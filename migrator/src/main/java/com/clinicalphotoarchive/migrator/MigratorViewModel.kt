@@ -46,7 +46,7 @@ class MigratorViewModel(application: Application) : AndroidViewModel(application
     )
         .processNameSuffix("archive_migrator")
         .daemon(false)
-        .version(1)
+        .version(2)
         .tag("clinical-photo-archive-migrator-v1")
 
     private val connection = object : ServiceConnection {
@@ -136,7 +136,7 @@ class MigratorViewModel(application: Application) : AndroidViewModel(application
         }
         if (_state.value.busy) return
 
-        _state.value = _state.value.copy(busy = true, message = null)
+        _state.value = _state.value.copy(busy = true, archiveReady = false, message = null)
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { remote.probe() }
@@ -227,6 +227,11 @@ class MigratorViewModel(application: Application) : AndroidViewModel(application
         val parts = raw.split('|')
         val photos = parts.getOrNull(1)?.trim()?.toIntOrNull()
         val dbBytes = parts.getOrNull(2)?.trim()?.toLongOrNull()
+        if (photos == null || photos < 0 || dbBytes == null || dbBytes <= 0) {
+            _state.value = _state.value.copy(archiveReady = false, photoCount = null, databaseBytes = null,
+                message = "Получен некорректный ответ проверки данных")
+            return
+        }
         _state.value = _state.value.copy(
             archiveReady = true,
             photoCount = photos,

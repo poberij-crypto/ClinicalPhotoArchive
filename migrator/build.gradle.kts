@@ -13,8 +13,8 @@ android {
         applicationId = "com.clinicalphotoarchive.migrator"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
     }
 
     buildFeatures {
@@ -54,6 +54,7 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
     implementation(composeBom)
 
