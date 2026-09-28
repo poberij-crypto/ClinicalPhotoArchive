@@ -21,20 +21,61 @@ class ArchiveUserService : IArchiveService.Stub {
     }
 
     override fun probe(): String {
-        val result = runCommand(
-            listOf(
-                "/system/bin/run-as",
-                TARGET_PACKAGE,
-                "/system/bin/sh",
+        val databaseSizeResult = runCommand(
+            runAsToybox(
+                "wc",
                 "-c",
-                PROBE_COMMAND
+                DATABASE_PATH
             )
         )
-        return if (result.exitCode == 0) {
-            result.stdout.trim()
-        } else {
-            "ERROR|${sanitize(result.stderr.ifBlank { result.stdout })}"
+
+        if (databaseSizeResult.exitCode != 0) {
+            val error = databaseSizeResult.stderr.ifBlank { databaseSizeResult.stdout }
+            return if (isMissingPath(error)) {
+                "ERROR|NO_DB"
+            } else {
+                "ERROR|${sanitize(error)}"
+            }
         }
+
+        val databaseBytes = databaseSizeResult.stdout
+            .trim()
+            .split(Regex("\\s+"))
+            .firstOrNull()
+            ?.toLongOrNull()
+            ?: return "ERROR|Не удалось определить размер базы"
+
+        if (databaseBytes <= 0L) {
+            return "ERROR|База данных имеет нулевой размер"
+        }
+
+        val photoCount = if (imageDirectoryExists()) {
+            val findResult = runCommand(
+                runAsToybox(
+                    "find",
+                    IMAGE_DIRECTORY,
+                    "-type",
+                    "f"
+                )
+            )
+
+            if (findResult.exitCode != 0) {
+                val error = findResult.stderr.ifBlank { findResult.stdout }
+                if (isMissingPath(error)) {
+                    0
+                } else {
+                    return "ERROR|${sanitize(error)}"
+                }
+            } else {
+                findResult.stdout
+                    .lineSequence()
+                    .count { it.isNotBlank() }
+            }
+        } else {
+            0
+        }
+
+        return "OK|$photoCount|$databaseBytes"
     }
 
     override fun writeArchive(output: ParcelFileDescriptor): String {
@@ -43,21 +84,40 @@ class ArchiveUserService : IArchiveService.Stub {
             return preflight
         }
 
-        runCatching {
-            ProcessBuilder("/system/bin/am", "force-stop", TARGET_PACKAGE)
-                .start()
-                .waitFor(10, TimeUnit.SECONDS)
+        val stopped = runCommand(
+            listOf(
+                "/system/bin/am",
+                "force-stop",
+                TARGET_PACKAGE
+            ),
+            timeoutSeconds = 10
+        )
+
+        if (stopped.exitCode != 0) {
+            return "ERROR|${sanitize(stopped.stderr.ifBlank { stopped.stdout })}"
         }
 
         Thread.sleep(350)
 
-        val process = ProcessBuilder(
+        val command = mutableListOf(
             "/system/bin/run-as",
             TARGET_PACKAGE,
-            "/system/bin/sh",
-            "-c",
-            ARCHIVE_COMMAND
-        ).start()
+            "/system/bin/toybox",
+            "tar",
+            "-cf",
+            "-",
+            "databases"
+        )
+
+        if (imageDirectoryExists()) {
+            command += IMAGE_DIRECTORY
+        }
+
+        val process = try {
+            ProcessBuilder(command).start()
+        } catch (t: Throwable) {
+            return "ERROR|${sanitize(t.message ?: t.javaClass.simpleName)}"
+        }
 
         val errorBuffer = ByteArrayOutputStream()
         val errorThread = thread(name = "archive-stderr", start = true) {
@@ -85,7 +145,7 @@ class ArchiveUserService : IArchiveService.Stub {
             return "ERROR|${sanitize(t.message ?: t.javaClass.simpleName)}"
         }
 
-        val finished = process.waitFor(90, TimeUnit.SECONDS)
+        val finished = process.waitFor(120, TimeUnit.SECONDS)
         if (!finished) {
             process.destroyForcibly()
             return "ERROR|Превышено время создания архива"
@@ -101,14 +161,53 @@ class ArchiveUserService : IArchiveService.Stub {
         }
     }
 
-    private fun runCommand(command: List<String>): CommandResult {
+    private fun imageDirectoryExists(): Boolean {
+        val result = runCommand(
+            runAsToybox(
+                "test",
+                "-d",
+                IMAGE_DIRECTORY
+            )
+        )
+        return result.exitCode == 0
+    }
+
+    private fun runAsToybox(vararg arguments: String): List<String> =
+        buildList {
+            add("/system/bin/run-as")
+            add(TARGET_PACKAGE)
+            add("/system/bin/toybox")
+            addAll(arguments)
+        }
+
+    private fun runCommand(
+        command: List<String>,
+        timeoutSeconds: Long = 20
+    ): CommandResult {
         return try {
             val process = ProcessBuilder(command).start()
-            val stdout = process.inputStream.bufferedReader().use { it.readText() }
-            val stderr = process.errorStream.bufferedReader().use { it.readText() }
-            val finished = process.waitFor(20, TimeUnit.SECONDS)
+            val stdoutBuffer = ByteArrayOutputStream()
+            val stderrBuffer = ByteArrayOutputStream()
+
+            val stdoutThread = thread(start = true) {
+                process.inputStream.use { it.copyTo(stdoutBuffer) }
+            }
+            val stderrThread = thread(start = true) {
+                process.errorStream.use { it.copyTo(stderrBuffer) }
+            }
+
+            val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
             if (!finished) {
                 process.destroyForcibly()
+            }
+
+            stdoutThread.join(2_000)
+            stderrThread.join(2_000)
+
+            val stdout = stdoutBuffer.toString(Charsets.UTF_8.name())
+            val stderr = stderrBuffer.toString(Charsets.UTF_8.name())
+
+            if (!finished) {
                 CommandResult(124, stdout, "Команда превысила время ожидания")
             } else {
                 CommandResult(process.exitValue(), stdout, stderr)
@@ -118,8 +217,19 @@ class ArchiveUserService : IArchiveService.Stub {
         }
     }
 
+    private fun isMissingPath(value: String): Boolean {
+        val text = value.lowercase()
+        return "no such file" in text ||
+            "no such directory" in text
+    }
+
     private fun sanitize(value: String): String =
-        value.replace('|', '/').replace('\n', ' ').replace('\r', ' ').trim().take(400)
+        value
+            .replace('|', '/')
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .trim()
+            .take(400)
 
     private data class CommandResult(
         val exitCode: Int,
@@ -130,19 +240,7 @@ class ArchiveUserService : IArchiveService.Stub {
     companion object {
         const val TARGET_PACKAGE = "com.clinicalphotoarchive"
 
-        private const val PROBE_COMMAND =
-            "if [ ! -f databases/clinical_photo_archive.db ]; then " +
-                "echo NO_DB; exit 42; fi; " +
-                "P=0; " +
-                "if [ -d files/clinical_images ]; then " +
-                "P=\$(/system/bin/toybox find files/clinical_images -type f 2>/dev/null | /system/bin/toybox wc -l); fi; " +
-                "D=\$(/system/bin/toybox wc -c < databases/clinical_photo_archive.db 2>/dev/null); " +
-                "echo OK|\$P|\$D"
-
-        private const val ARCHIVE_COMMAND =
-            "set -e; " +
-                "if [ -d files/clinical_images ]; then " +
-                "exec /system/bin/toybox tar -cf - databases files/clinical_images; " +
-                "else exec /system/bin/toybox tar -cf - databases; fi"
+        private const val DATABASE_PATH = "databases/clinical_photo_archive.db"
+        private const val IMAGE_DIRECTORY = "files/clinical_images"
     }
 }
