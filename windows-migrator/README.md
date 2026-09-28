@@ -27,3 +27,15 @@ the user. The utility does not upload the archive to GitHub or cloud services.
 
 The Windows executable is not currently Authenticode-signed, so Microsoft
 SmartScreen may display a warning on first launch.
+
+## Version 1.0.1
+
+Database probing and archive creation use direct `adb shell run-as ... toybox`
+and `adb exec-out run-as ... toybox tar` arguments, without `sh -c`, pipelines,
+or shell substitution. Photo counting and size parsing happen in Python.
+Missing optional image directories are supported; access and connection failures
+stop the operation. The archive still includes the entire databases directory
+(including WAL/SHM when present). Invalid partial archives are removed without
+replacing an existing backup. Deferred GUI error messages retain their text.
+
+Regression checks: `python -m unittest discover -s windows-migrator -p "test_*.py" -v`.

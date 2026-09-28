@@ -12,29 +12,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 APP_TITLE = "ClinicalPhotoArchive Migrator"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 TARGET_PACKAGE = "com.clinicalphotoarchive"
 DATABASE_NAME = "clinical_photo_archive.db"
-
-PROBE_COMMAND = (
-    "if [ ! -f databases/" + DATABASE_NAME + " ]; then "
-    "echo NO_DB; exit 42; fi; "
-    "P=0; "
-    "if [ -d files/clinical_images ]; then "
-    "P=$(toybox find files/clinical_images -type f 2>/dev/null | toybox wc -l); fi; "
-    "D=$(toybox wc -c < databases/" + DATABASE_NAME + " 2>/dev/null); "
-    'echo "OK|$P|$D"'
-)
-
-ARCHIVE_COMMAND = (
-    "set -e; "
-    "if [ -d files/clinical_images ]; then "
-    "exec toybox tar -cf - databases files/clinical_images; "
-    "else "
-    "exec toybox tar -cf - databases; "
-    "fi"
-)
-
 
 @dataclass(frozen=True)
 class Device:
@@ -121,38 +101,40 @@ def probe_device(serial: str) -> ProbeResult:
     if package.returncode != 0 or "package:" not in package.stdout:
         raise RuntimeError("Старая версия ClinicalPhotoArchive на устройстве не найдена.")
 
-    result = run_adb(
-        ["shell", "run-as", TARGET_PACKAGE, "sh", "-c", PROBE_COMMAND],
-        serial=serial,
-        timeout=25,
-    )
-    output = (result.stdout + "\n" + result.stderr).strip()
-    if result.returncode != 0 or not result.stdout.strip().startswith("OK|"):
-        lower = output.lower()
-        if "not debuggable" in lower:
-            raise RuntimeError(
-                "Установленная версия не допускает run-as. Этот Migrator предназначен для старых debug-сборок."
-            )
-        if "unknown package" in lower or "package not found" in lower:
-            raise RuntimeError("Старая версия ClinicalPhotoArchive не найдена.")
-        if "no_db" in lower:
-            raise RuntimeError("Приложение найдено, но база clinical_photo_archive.db отсутствует.")
-        raise RuntimeError(
-            "Не удалось получить доступ к закрытым данным старой версии. "
-            + (output[:500] if output else "Неизвестная ошибка run-as.")
-        )
-
-    parts = result.stdout.strip().split("|")
-    if len(parts) < 3:
-        raise RuntimeError("Получен неожиданный ответ от старого приложения.")
+    result = run_private(serial, ["stat", "-c", "%s", f"databases/{DATABASE_NAME}"])
     try:
-        photos = int(parts[1].strip())
-        db_bytes = int(parts[2].strip())
+        db_bytes = int(result.stdout.strip())
     except ValueError as exc:
-        raise RuntimeError("Не удалось прочитать размер базы или число фотографий.") from exc
+        raise RuntimeError("Не удалось прочитать размер базы.") from exc
     if db_bytes <= 0:
         raise RuntimeError("Файл базы найден, но имеет нулевой размер.")
+    photos = 0
+    if has_image_directory(serial):
+        result = run_private(serial, ["find", "files/clinical_images", "-type", "f", "-print0"])
+        photos = result.stdout.count("\0")
     return ProbeResult(photo_count=photos, database_bytes=db_bytes)
+
+
+def run_private(serial: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+    result = run_adb(["shell", "run-as", TARGET_PACKAGE, "toybox", *args], serial=serial, timeout=25)
+    if result.returncode != 0:
+        output = (result.stdout + "\n" + result.stderr).strip()
+        if "not debuggable" in output.lower():
+            raise RuntimeError("Установленная версия не допускает run-as. Этот Migrator предназначен для старых debug-сборок.")
+        raise RuntimeError("Не удалось получить доступ к данным старой версии: " + (output[:500] or f"код {result.returncode}"))
+    return result
+
+
+def has_image_directory(serial: str) -> bool:
+    # Inspect parents so a missing optional directory is distinct from an ADB/access error.
+    root = run_private(serial, ["ls", "-a", "."]).stdout.splitlines()
+    if "files" not in root:
+        return False
+    entries = run_private(serial, ["ls", "-a", "files"]).stdout.splitlines()
+    if "clinical_images" not in entries:
+        return False
+    run_private(serial, ["test", "-d", "files/clinical_images"])
+    return True
 
 
 def create_archive(serial: str, destination: Path) -> ArchiveCheck:
@@ -164,6 +146,8 @@ def create_archive(serial: str, destination: Path) -> ArchiveCheck:
             + (stopped.stderr.strip() or stopped.stdout.strip())
         )
 
+    include_images = has_image_directory(serial)
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".partial")
     if partial.exists():
@@ -171,8 +155,10 @@ def create_archive(serial: str, destination: Path) -> ArchiveCheck:
 
     cmd = [
         str(adb_path()), "-s", serial, "exec-out",
-        "run-as", TARGET_PACKAGE, "sh", "-c", ARCHIVE_COMMAND,
+        "run-as", TARGET_PACKAGE, "toybox", "tar", "-cf", "-", "databases",
     ]
+    if include_images:
+        cmd.append("files/clinical_images")
     try:
         with partial.open("wb") as output:
             process = subprocess.Popen(
@@ -205,9 +191,13 @@ def create_archive(serial: str, destination: Path) -> ArchiveCheck:
             partial.unlink()
         raise RuntimeError("Полученный архив слишком мал или пуст.")
 
-    checked = verify_archive(partial)
-    os.replace(partial, destination)
-    return checked
+    try:
+        checked = verify_archive(partial)
+        os.replace(partial, destination)
+        return checked
+    finally:
+        if partial.exists():
+            partial.unlink()
 
 
 def verify_archive(path: Path) -> ArchiveCheck:
@@ -346,7 +336,7 @@ class MigratorApp(tk.Tk):
                 devices = list_devices()
                 self.after(0, lambda: self._apply_devices(devices))
             except Exception as exc:
-                self.after(0, lambda: self._show_error(str(exc)))
+                self.after(0, lambda error=str(exc): self._show_error(error))
         threading.Thread(target=work, daemon=True).start()
 
     def _apply_devices(self, devices: list[Device]) -> None:
@@ -396,7 +386,7 @@ class MigratorApp(tk.Tk):
                 result = probe_device(device.serial)
                 self.after(0, lambda: self._probe_ok(result))
             except Exception as exc:
-                self.after(0, lambda: self._show_error(str(exc)))
+                self.after(0, lambda error=str(exc): self._show_error(error))
         threading.Thread(target=work, daemon=True).start()
 
     def _probe_ok(self, result: ProbeResult) -> None:
@@ -425,7 +415,7 @@ class MigratorApp(tk.Tk):
                 checked = create_archive(device.serial, destination)
                 self.after(0, lambda: self._archive_ok(destination, checked))
             except Exception as exc:
-                self.after(0, lambda: self._show_error(str(exc)))
+                self.after(0, lambda error=str(exc): self._show_error(error))
         threading.Thread(target=work, daemon=True).start()
 
     def _archive_ok(self, path: Path, checked: ArchiveCheck) -> None:

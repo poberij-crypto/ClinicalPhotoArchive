@@ -1,6 +1,10 @@
 name: Build Windows Migrator
 
 on:
+  pull_request:
+    paths:
+      - 'windows-migrator/**'
+      - '.github/workflows/build-windows-migrator.yml'
   workflow_dispatch:
   push:
     branches:
@@ -37,6 +41,9 @@ jobs:
         shell: pwsh
         run: python -m py_compile windows-migrator\clinical_photo_archive_migrator.py
 
+      - name: Regression tests
+        run: python -m unittest discover -s windows-migrator -p "test_*.py" -v
+
       - name: Install PyInstaller
         shell: pwsh
         run: |
@@ -52,7 +59,7 @@ jobs:
       - name: Self-test packaged ADB
         shell: pwsh
         run: |
-          $process = Start-Process -FilePath ".\dist\ClinicalPhotoArchive-Migrator\ClinicalPhotoArchive-Migrator.exe" -ArgumentList "--self-test" -Wait -PassThru
+          $process = Start-Process -FilePath ".\dist\ClinicalPhotoArchive-Migrator\ClinicalPhotoArchive-Migrator.exe" -ArgumentList "--self-test" -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Migrator self-test failed with exit code $($process.ExitCode)" }
 
       - name: Prepare distributable ZIP
@@ -60,13 +67,13 @@ jobs:
         run: |
           Copy-Item "windows-migrator\README.md" "dist\ClinicalPhotoArchive-Migrator\README.txt"
           New-Item -ItemType Directory -Force "release-output" | Out-Null
-          Compress-Archive -Path "dist\ClinicalPhotoArchive-Migrator\*" -DestinationPath "release-output\ClinicalPhotoArchive-Windows-Migrator-v1.0.0.zip" -CompressionLevel Optimal
-          $hash = (Get-FileHash "release-output\ClinicalPhotoArchive-Windows-Migrator-v1.0.0.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-          "SHA256  ClinicalPhotoArchive-Windows-Migrator-v1.0.0.zip  $hash" | Set-Content "release-output\SHA256.txt"
+          Compress-Archive -Path "dist\ClinicalPhotoArchive-Migrator\*" -DestinationPath "release-output\ClinicalPhotoArchive-Windows-Migrator-v1.0.1.zip" -CompressionLevel Optimal
+          $hash = (Get-FileHash "release-output\ClinicalPhotoArchive-Windows-Migrator-v1.0.1.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "SHA256  ClinicalPhotoArchive-Windows-Migrator-v1.0.1.zip  $hash" | Set-Content "release-output\SHA256.txt"
 
       - name: Upload Windows Migrator
         uses: actions/upload-artifact@v4
         with:
-          name: ClinicalPhotoArchive-Windows-Migrator-v1.0.0
+          name: ClinicalPhotoArchive-Windows-Migrator-v1.0.1
           path: release-output/
           if-no-files-found: error
