@@ -9,7 +9,7 @@
 - Baseline assembleDebug main: PASS.
 - 23 host tests Room/SQLite через Robolectric: PASS. Категории, миграция, ZIP v1/v2, rollback, ссылки/пути, recovery, legacy merge/reject, цель медиа, геометрия.
 - Тест отмены legacy import после commit сначала воспроизвёл удаление сохранённого файла (RED), после исправления PASS. Caller dispatcher приостановлен до отмены после commit.
-- assembleDebug, compileReleaseKotlin, assembleVerificationAndroidTest и lintDebug: PASS; lint 0 ошибок/предупреждений.
+- assembleDebug, compileReleaseKotlin, assembleVerificationAndroidTest и lintDebug: PASS; lint 0 ошибок, 27 предупреждений (18 о версиях SDK/зависимостей, остальные о platform attributes, тестовой видимости, оценке свободного места и прежних ресурсах).
 - На Windows Gradle Test Worker не запускается из пути с кириллицей (GradleWorkerMain CNFE). Host suite запущена JUnitCore с теми же скомпилированными классами/зависимостями через manifest classpath. CI использует штатный testVerificationUnitTest.
 - Локальный assembleRelease требует существующий signing keystore, которого здесь нет. Защита подписи сохранена; release выполняет существующий CI с secrets.
 
