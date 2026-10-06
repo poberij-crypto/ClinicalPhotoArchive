@@ -10,6 +10,21 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PatientDao {
+    @Query("SELECT * FROM patients WHERE ((:categoryId IS NULL AND categoryId IS NULL) OR categoryId = :categoryId) AND (:query = '' OR searchKey LIKE '%' || :query || '%') ORDER BY searchKey, id")
+    fun observeCategory(categoryId: Long?, query: String): Flow<List<PatientEntity>>
+
+    @Query("SELECT COUNT(*) FROM patients WHERE categoryId IS NULL")
+    fun observeUncategorizedCount(): Flow<Int>
+
+    @Query("SELECT * FROM patients WHERE id=:id LIMIT 1")
+    suspend fun getById(id: Long): PatientEntity?
+
+    @Query("UPDATE patients SET categoryId=:categoryId, updatedAt=:updatedAt WHERE id=:id")
+    suspend fun assignCategory(id: Long, categoryId: Long?, updatedAt: Long): Int
+
+    @Query("UPDATE patients SET categoryId=NULL, updatedAt=:updatedAt WHERE categoryId=:categoryId")
+    suspend fun clearCategory(categoryId: Long, updatedAt: Long)
+
     @Query("SELECT * FROM patients WHERE :query = '' OR searchKey LIKE '%' || :query || '%' ORDER BY searchKey")
     fun observeAll(query: String): Flow<List<PatientEntity>>
 
@@ -34,6 +49,12 @@ interface PatientDao {
 
 @Dao
 interface PhotoDao {
+    @Query("SELECT * FROM photos WHERE id=:id LIMIT 1")
+    fun observeById(id: Long): Flow<PhotoEntity?>
+
+    @Query("SELECT * FROM photos WHERE id=:id LIMIT 1")
+    suspend fun getById(id: Long): PhotoEntity?
+
     @Query("SELECT * FROM photos WHERE patientId = :patientId AND section = :section ORDER BY capturedAt ASC, id ASC")
     fun observeSection(patientId: Long, section: String): Flow<List<PhotoEntity>>
 

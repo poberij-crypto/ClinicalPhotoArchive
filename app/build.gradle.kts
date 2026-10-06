@@ -18,8 +18,9 @@ android {
         applicationId = "com.clinicalphotoarchive"
         minSdk = 28
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.3.0"
+        versionCode = 6
+        versionName = "1.4.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -38,6 +39,12 @@ android {
     }
 
     buildTypes {
+        create("verification") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".verification"
+            versionNameSuffix = "-verification"
+            matchingFallbacks.add("debug")
+        }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
@@ -47,6 +54,12 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+    testBuildType = "verification"
+    sourceSets["androidTest"].assets.srcDir("$projectDir/schemas")
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -87,4 +100,13 @@ dependencies {
 
     implementation("androidx.exifinterface:exifinterface:1.4.1")
     implementation("org.apache.commons:commons-compress:1.27.1")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.room:room-testing:2.8.4")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

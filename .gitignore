@@ -6,3 +6,6 @@ build/
 **/build/
 *.iml
 .DS_Store
+
+.build-tools/
+.superpowers/

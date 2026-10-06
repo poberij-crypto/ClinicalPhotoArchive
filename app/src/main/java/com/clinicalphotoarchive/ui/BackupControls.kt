@@ -26,7 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun BackupControls(vm: AppViewModel, modifier: Modifier = Modifier) {
-    val busy by vm.archiveBusy.collectAsStateWithLifecycle()
+    val busy by vm.busy.collectAsStateWithLifecycle()
     val message by vm.archiveMessage.collectAsStateWithLifecycle()
     var menuExpanded by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
@@ -113,7 +113,7 @@ fun BackupControls(vm: AppViewModel, modifier: Modifier = Modifier) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = !busy, onClick = {
                     pendingRestoreUri = null
                     vm.restoreBackup(uri)
                 }) { Text("Восстановить") }
@@ -137,7 +137,7 @@ fun BackupControls(vm: AppViewModel, modifier: Modifier = Modifier) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = !busy, onClick = {
                     pendingLegacyUri = null
                     vm.importLegacyArchive(uri)
                 }) { Text("Импортировать") }
@@ -151,7 +151,7 @@ fun BackupControls(vm: AppViewModel, modifier: Modifier = Modifier) {
     message?.let { text ->
         AlertDialog(
             onDismissRequest = vm::clearArchiveMessage,
-            title = { Text("Архив") },
+            title = { Text("Сообщение") },
             text = { Text(text) },
             confirmButton = {
                 TextButton(onClick = vm::clearArchiveMessage) { Text("OK") }
