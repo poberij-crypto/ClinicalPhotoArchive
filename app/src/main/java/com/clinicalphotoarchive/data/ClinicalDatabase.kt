@@ -5,10 +5,11 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [PatientEntity::class, PhotoEntity::class], version = 1, exportSchema = true)
+@Database(entities = [PatientEntity::class, PhotoEntity::class, CategoryEntity::class], version = 2, exportSchema = true)
 abstract class ClinicalDatabase : RoomDatabase() {
     abstract fun patientDao(): PatientDao
     abstract fun photoDao(): PhotoDao
+    abstract fun categoryDao(): CategoryDao
 
     companion object {
         @Volatile private var INSTANCE: ClinicalDatabase? = null
@@ -17,7 +18,7 @@ abstract class ClinicalDatabase : RoomDatabase() {
                 context.applicationContext,
                 ClinicalDatabase::class.java,
                 "clinical_photo_archive.db"
-            ).build().also { INSTANCE = it }
+            ).addMigrations(DatabaseMigrations.MIGRATION_1_2).build().also { INSTANCE = it }
         }
     }
 }

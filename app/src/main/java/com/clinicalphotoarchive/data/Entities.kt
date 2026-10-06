@@ -8,10 +8,25 @@ import androidx.room.PrimaryKey
 enum class PhotoSection(val dbValue: String, val title: String) {
     BEFORE("before", "До"),
     OPERATION("operation", "Операция"),
-    AFTER("after", "После")
+    AFTER("after", "После"),
+    XRAY("xray", "Рентген")
 }
 
-@Entity(tableName = "patients")
+@Entity(tableName = "categories", indices = [Index(value = ["nameKey"], unique = true)])
+data class CategoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val nameKey: String,
+    val sortOrder: Long,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "patients",
+    foreignKeys = [ForeignKey(entity = CategoryEntity::class, parentColumns = ["id"],
+        childColumns = ["categoryId"], onDelete = ForeignKey.SET_NULL)],
+    indices = [Index("categoryId")]
+)
 data class PatientEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val surname: String,
@@ -22,7 +37,8 @@ data class PatientEntity(
     val note: String = "",
     val searchKey: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val categoryId: Long? = null
 ) {
     val displayName: String
         get() = listOf(surname, firstName, middleName).filter { it.isNotBlank() }.joinToString(" ")

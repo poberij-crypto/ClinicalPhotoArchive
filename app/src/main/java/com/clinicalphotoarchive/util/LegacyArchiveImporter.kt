@@ -5,6 +5,8 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import androidx.room.withTransaction
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import com.clinicalphotoarchive.data.ClinicalDatabase
 import com.clinicalphotoarchive.data.PatientEntity
 import com.clinicalphotoarchive.data.PhotoEntity
@@ -19,14 +21,18 @@ import java.util.UUID
 
 class LegacyArchiveImporter(
     private val context: Context,
-    private val database: ClinicalDatabase
+    private val database: ClinicalDatabase,
+    private val operations: ArchiveOperationCoordinator = ArchiveOperationCoordinator(),
+    private val journal: ArchiveRecoveryJournal = ArchiveRecoveryJournal(context)
 ) {
     private val patientDao = database.patientDao()
     private val photoDao = database.photoDao()
 
-    suspend fun importFrom(uri: Uri): ImportResult {
+    suspend fun importFrom(uri: Uri): ImportResult = operations.withArchive {
+        journal.recover(database)
         val tempDir = File(context.cacheDir, "legacy_import_${UUID.randomUUID()}").apply { mkdirs() }
         val copiedFiles = mutableListOf<File>()
+        var committed = false
 
         try {
             val scan = scanArchive(uri, tempDir)
@@ -51,8 +57,7 @@ class LegacyArchiveImporter(
 
             val staged = stageImages(uri, photosToImport, copiedFiles)
 
-            try {
-                database.withTransaction {
+            database.withTransaction {
                     val idMap = existingMatches.toMutableMap()
 
                     legacy.patients.forEach { patient ->
@@ -82,20 +87,23 @@ class LegacyArchiveImporter(
                             )
                         )
                     }
-                }
-            } catch (t: Throwable) {
-                copiedFiles.forEach { runCatching { it.delete() } }
-                throw t
             }
-
-            return ImportResult(
+            // Returning from withTransaction can be cancelled after commit. Only
+            // journal reconciliation may delete files, using actual DB references.
+            committed = true
+            ImportResult(
                 patientsAdded = legacy.patients.size - existingMatches.size,
                 patientsMerged = existingMatches.size,
                 photosAdded = staged.size,
                 photosSkipped = legacy.photos.size - staged.size
             )
         } finally {
-            tempDir.deleteRecursively()
+            try {
+                withContext(NonCancellable) {
+                    if (committed) runCatching { journal.recover(database) }
+                    else journal.recover(database)
+                }
+            } finally { tempDir.deleteRecursively() }
         }
     }
 
@@ -153,6 +161,15 @@ class LegacyArchiveImporter(
         )
 
         try {
+            require(sqlite.version == 1) { "TAR этой версии базы не поддерживается. Используйте резервную копию ZIP v2." }
+            sqlite.rawQuery("PRAGMA table_info(patients)", null).use { columns ->
+                while (columns.moveToNext()) require(columns.getString(columns.getColumnIndexOrThrow("name")) != "categoryId") {
+                    "TAR содержит нозологические разделы. Используйте ZIP v2."
+                }
+            }
+            sqlite.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='categories'",null).use {
+                require(!it.moveToFirst()) { "TAR содержит нозологические разделы. Используйте ZIP v2." }
+            }
             val patients = readPatients(sqlite)
             require(patients.isNotEmpty()) { "В старой базе нет карточек пациентов" }
             val patientIds = patients.map { it.id }.toSet()
@@ -202,7 +219,7 @@ class LegacyArchiveImporter(
         val result = ArrayList<LegacyPhoto>()
         val seenIds = HashSet<Long>()
         val usedArchiveEntries = HashSet<String>()
-        val validSections = PhotoSection.entries.map { it.dbValue }.toSet()
+        val validSections = setOf("before", "operation", "after")
 
         db.query("photos", null, null, null, null, null, "id ASC").use { cursor ->
             requireColumn(cursor, "id")
@@ -289,6 +306,12 @@ class LegacyArchiveImporter(
         val planByEntry = photos.associateBy { it.archiveEntry }
         val staged = LinkedHashMap<String, StagedPhoto>()
         val imageDir = ImageFiles.imageDir(context)
+        val destinations = photos.associate { photo ->
+            val safeName = photo.originalName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                .takeLast(96).ifBlank { "image.jpg" }
+            photo.archiveEntry to File(imageDir, "LEGACY_${photo.id}_${UUID.randomUUID()}_$safeName")
+        }
+        journal.registerFiles(destinations.values.map { it.absolutePath })
 
         try {
             openTar(uri).use { tar ->
@@ -303,14 +326,7 @@ class LegacyArchiveImporter(
                         "Размер фотографии изменился между проверкой и импортом: ${legacy.originalName}"
                     }
 
-                    val safeName = legacy.originalName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-                        .takeLast(96)
-                        .ifBlank { "image.jpg" }
-                    val destination = File(
-                        imageDir,
-                        "LEGACY_${legacy.id}_${UUID.randomUUID()}_$safeName"
-                    )
-
+                    val destination = requireNotNull(destinations[path])
                     copyCurrentEntry(tar, destination, MAX_IMAGE_BYTES)
                     copiedFiles += destination
                     staged[path] = StagedPhoto(legacy, destination)
