@@ -77,6 +77,9 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
+    // AGP aligns test dependencies to the tested application. Room's schema
+    // reader needs core/json 1.8.1 together; isolate that alignment to tests.
+    "verificationImplementation"(platform("org.jetbrains.kotlinx:kotlinx-serialization-bom:1.8.1"))
 
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.13.0")
@@ -103,6 +106,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.room:room-migration:2.8.4")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
