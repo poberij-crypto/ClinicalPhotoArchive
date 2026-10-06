@@ -19,7 +19,7 @@
 
 ## Ограничения
 
-Первый CI подтвердил host tests, lint и signed release/signature. Instrumentation выявила смешанные core 1.7.3/json 1.8.1 (AGP consistent resolution). Ошибка воспроизведена отдельным тестом чтения схемы; BOM 1.8.1 выравнивает runtime только verification variant. Проверка UI navigation диагностируется по состоянию и semantics tree при сбое. Итоговые результаты публикуются в PR.
+Первый CI подтвердил host tests, lint и signed release/signature. Instrumentation выявила смешанные core 1.7.3/json 1.8.1 (AGP consistent resolution). Ошибка воспроизведена отдельным тестом чтения схемы; BOM 1.8.1 выравнивает runtime только verification variant. Повторный CI подтвердил migration helper. Semantics tree выявило скрытый в merged tree animated FAB label Material 3: тест единственной кнопки «Архив» теперь использует unmerged tree. Итоговые результаты публикуются в PR.
 
 Инструментальные migration/navigation/viewer тесты скомпилированы и включены в CI API 28/35 в отдельном пакете `.verification`. Локального эмулятора нет. Физический Fold/hinge/tabletop, крупный шрифт, внешняя камера/SAF, process recreation и установка подписанного обновления требуют проверки на устройстве. Figma wireframes compact/expanded проверены, но не подтверждают поведение физического Fold.
 

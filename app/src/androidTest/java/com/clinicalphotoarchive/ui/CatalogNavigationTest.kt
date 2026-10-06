@@ -21,13 +21,14 @@ class CatalogNavigationTest {
     }
     @Test fun categoryAndXrayFlowThenBackToCatalog() {
         try {
-            rule.waitUntil(5000) { rule.onAllNodesWithText("Архив").fetchSemanticsNodes().isNotEmpty() }
+            // Material 3 clears the animated FAB label in the merged tree.
+            rule.waitUntil(5000) { rule.onAllNodesWithText("Архив",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() }
         } catch(t: Throwable) {
             val vm=androidx.lifecycle.ViewModelProvider(rule.activity)[AppViewModel::class.java]
             throw AssertionError("Catalog startup: busy=${vm.busy.value}; archive=${vm.archiveBusy.value}; media=${vm.mediaPending.value}; message=${vm.archiveMessage.value}\n"+
                 rule.onRoot(useUnmergedTree=true).printToString(),t)
         }
-        rule.onAllNodesWithText("Архив").assertCountEquals(1)
+        rule.onAllNodesWithText("Архив",useUnmergedTree=true).assertCountEquals(1)
         rule.onNodeWithText("Без категории").assertExists()
         rule.onNodeWithContentDescription("Добавить раздел").performClick()
         rule.onNodeWithText("Название раздела").performTextInput("Учебная нозология")
